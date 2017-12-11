@@ -12,6 +12,8 @@ for i in range(2):
     print("Displaying projector")
     p.show()
     print("Projector displayed")
+    print("Getting monitor")
+    print("Monitor: " + str(p.getMonitor()))
     print("Waiting...")
     time.sleep(2)
     print("Stopping projector")

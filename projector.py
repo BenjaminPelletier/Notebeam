@@ -3,20 +3,27 @@ from OpenGL.GLU import *
 from OpenGL.GL import *
 from threading import Thread, Event
 import time
+from screeninfo import get_monitors  # sudo pip install screeninfo
 
 
 class Projector:
     def __init__(self):
         self.shown = False
         self.shutdown = False
+        self.width = None
+        self.height = None
+        self.monitor = None
 
-    def show(self):
+    def show(self, monitor_index=0):
         """
         Show the GLUT window, if it has not yet been shown.
         Close the window by calling stop().
         """
         if self.shown:
             return
+
+        self.monitor = get_monitors()[monitor_index]
+
         self.shutdown_received = Event()
         self.shown = True
         t = Thread(target=self._init)
@@ -38,11 +45,13 @@ class Projector:
             self.shown = False
         #print("Projector.stop finished")
 
+    def getMonitor(self):
+        return self.monitor
+
     def _init(self):
         glutInit([])
         glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
-        glutInitWindowPosition(100, 100)
-        glutInitWindowSize(400, 400)
+        glutInitWindowPosition(self.monitor.x, self.monitor.y)
         self.window = glutCreateWindow('Projector')
         glutFullScreen()
 
