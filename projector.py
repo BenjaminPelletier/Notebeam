@@ -4,6 +4,7 @@ from OpenGL.GL import *
 from threading import Thread, Event
 import time
 from screeninfo import get_monitors  # sudo pip install screeninfo
+import numpy, math
 
 
 class Projector:
@@ -13,6 +14,9 @@ class Projector:
         self.width = None
         self.height = None
         self.monitor = None
+        self.display_routine = None
+        self.displayed = Event()
+        self.displayed.set()
 
     def show(self, monitor_index=0):
         """
@@ -23,6 +27,11 @@ class Projector:
             return
 
         self.monitor = get_monitors()[monitor_index]
+
+        self.p2_xn = int(math.ceil(math.log(self.monitor.width, 2)))
+        self.p2_x0 = int(math.floor((self.p2_xn - self.monitor.width) / 2))
+        self.p2_yn = int(math.ceil(math.log(self.monitor.height, 2)))
+        self.p2_y0 = int(math.floor((self.p2_yn - self.monitor.height) / 2))
 
         self.shutdown_received = Event()
         self.shown = True
@@ -45,8 +54,57 @@ class Projector:
             self.shown = False
         #print("Projector.stop finished")
 
-    def getMonitor(self):
+    def get_monitor(self):
         return self.monitor
+
+    def get_gray_bits_width(self):
+        return self.p2_xn
+
+    def get_gray_bits_height(self):
+        return self.p2_yn
+
+    def show_gray_cols(self, bit):
+        if not self.shown:
+            raise Exception("Cannot show_gray_cols on a Projector that is not yet shown")
+
+        block = gray_block(self.p2_xn)
+
+        def display_cols():
+            glBegin(GL_QUADS)
+            glColor3f(1, 1, 1)
+            for i in range(self.monitor.width):
+                if block[i + self.p2_x0, bit] > 0:
+                    glVertex2f(i, 0)
+                    glVertex2f(i, self.monitor.height)
+                    glVertex2f(i + 1, self.monitor.height)
+                    glVertex2f(i + 1, 0)
+            glEnd()
+
+        self._exec_display_routine(display_cols)
+
+    def show_gray_rows(self, bit):
+        if not self.shown:
+            raise Exception("Cannot show_gray_rows on a Projector that is not yet shown")
+
+        block = gray_block(self.p2_yn)
+
+        def display_rows():
+            glBegin(GL_QUADS)
+            glColor3f(1, 1, 1)
+            for i in range(self.monitor.height):
+                if block[i + self.p2_x0, bit] > 0:
+                    glVertex2f(0, i)
+                    glVertex2f(self.monitor.width, i)
+                    glVertex2f(self.monitor.width, i + 1)
+                    glVertex2f(0, i + 1)
+            glEnd()
+
+        self._exec_display_routine(display_rows)
+
+    def _exec_display_routine(self, routine):
+        self.display_routine = routine
+        self.displayed.clear()
+        self.displayed.wait()
 
     def _init(self):
         glutInit([])
@@ -55,31 +113,14 @@ class Projector:
         self.window = glutCreateWindow('Projector')
         glutFullScreen()
 
-        glClearColor(0., 0., 0., 1.)
-        glShadeModel(GL_SMOOTH)
-        glEnable(GL_CULL_FACE)
-        glEnable(GL_DEPTH_TEST)
-        glEnable(GL_LIGHTING)
-        lightZeroPosition = [10., 4., 10., 1.]
-        lightZeroColor = [0.8, 1.0, 0.8, 1.0]  # green tinged
-        glLightfv(GL_LIGHT0, GL_POSITION, lightZeroPosition)
-        glLightfv(GL_LIGHT0, GL_DIFFUSE, lightZeroColor)
-        glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.1)
-        glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.05)
-        glEnable(GL_LIGHT0)
+        glOrtho(0, self.monitor.width, self.monitor.height, 0, -1, 1)
+
+        glClearColor(0, 0, 0, 1)
 
         glutIdleFunc(self._idle)
         glutDisplayFunc(self._display)
         glutKeyboardFunc(self._keypress)
         glutMouseFunc(self._mouse)
-
-        glMatrixMode(GL_PROJECTION)
-        gluPerspective(40., 1., 1., 40.)
-        glMatrixMode(GL_MODELVIEW)
-        gluLookAt(0, 0, 10,
-                  0, 0, 0,
-                  0, 1, 0)
-        glPushMatrix()
 
         glutMainLoop()
 
@@ -93,19 +134,36 @@ class Projector:
             #print("Projector._idle: glutLeaveMainLoop")
             glutLeaveMainLoop()
             #print("Projector._idle: all done")
+        if not self.displayed.isSet():
+            glutPostRedisplay()
 
     def _display(self):
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glPushMatrix()
-        color = [1.0, 0., 0., 1.]
-        glMaterialfv(GL_FRONT, GL_DIFFUSE, color)
-        glutSolidSphere(2, 20, 20)
-        glPopMatrix()
+        #glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glClear(GL_COLOR_BUFFER_BIT)
+
+        if self.display_routine is not None:
+            self.display_routine()
+
         glutSwapBuffers()
-        return
+
+        self.displayed.set()
 
     def _keypress(self, key, x, y):
         pass
 
     def _mouse(self, button, state, x, y):
         pass
+
+
+def gray_block(n_bits, dtype=int):
+    """
+    Returns a 2^n_bits x n_bits numpy array where the ith row contains the ith Gray code in the sequence
+    """
+    block = numpy.array([[0, 0], [0, 1], [1, 1], [1, 0]], dtype=dtype)
+    for i in range(2, n_bits):
+        block1 = numpy.zeros((block.shape[0], block.shape[1]+1), dtype=dtype)
+        block1[:,1:] = block
+        block2 = numpy.ones(block1.shape, dtype=dtype)
+        block2[:,1:] = numpy.flipud(block)
+        block = numpy.concatenate((block1, block2), axis=0)
+    return block
