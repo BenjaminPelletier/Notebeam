@@ -119,7 +119,7 @@ for fname in fnames:
     kb_quad = kb_quad[np.mod(np.array([0,1,2,3]) + i_max, 4), :]
 
     # Extract key brightnesses
-    pixel_subsampling = 5
+    pixel_subsampling = 10
     n = int(pixel_subsampling*dp[i_max])
     kb0 = project_line(gray, 0.75*kb_quad[0,:]+0.25*kb_quad[3,:], 0.75*kb_quad[1,:]+0.25*kb_quad[2,:], n)
     kb1 = project_line(gray, 0.25*kb_quad[0,:]+0.75*kb_quad[3,:], 0.25*kb_quad[1,:]+0.75*kb_quad[2,:], n)
@@ -131,28 +131,41 @@ for fname in fnames:
         kb1 = temp
         kb_quad = kb_quad[[2, 3, 0, 1], :]
 
-    from scipy.fftpack import fft, fftfreq
-    T = 1.0/pixel_subsampling
-    N = n
-    x = np.linspace(0.0, 1.0 / (2.0 * T), int(N / 2))
-    yr = fft(kb1)  # "raw" FFT with both + and - frequencies
-    y = 2.0 / N * np.abs(yr[0:np.int(N / 2)])  # positive freqs only
-    plt.plot(x,y)
+    # Estimate key spacing via autocorrelation
+    min_key_width = 3 # pixels
+    max_key_width = img.shape[1] / 30 # pixels
+
+    kb1f = kb1.astype(float)
+    kb1f = kb1f - np.mean(kb1f)
+    sigma2 = np.power(np.std(kb1f), 2)
+    i0 = min_key_width * pixel_subsampling
+    i1 = max_key_width * pixel_subsampling
+    n = len(kb1) - i1
+    ac = np.zeros([i1-i0+1], float)
+    for i in range(0, i1-i0+1):
+        ac[i] = np.mean(kb1f[0:n] * kb1f[i:n+i]) / sigma2
+    period = np.argmax(ac[i0:]) + i0
+
+    # Estimate key spacing offset
+    ac = np.zeros([period], float)
+    for i in range(len(kb1f)):
+        ac[i % period] += kb1f[i]
+    phase = np.argmin(ac)
+
+    # Refine key spacing
+    def score(phase, period0, dPeriod):
+        x = np.arange(0, len(kb1f), dtype=float)
+        weight = np.zeros_like(x)
+        c = phase
+        while c <
+
+    plt.plot(kb1f)
+    for i in range(phase, len(kb1f), period):
+        plt.plot([i, i], [min(kb1f), max(kb1f)])
     plt.show()
 
-    # x = fftfreq(n, d=1.0/pixel_subsampling)
-    # spectrum = fft(kb1)
-    # magnitude = np.abs(spectrum)
-    # phase = np.angle(spectrum)
-    # plt.plot(1.0/x, magnitude)
-    # plt.show()
 
-    # plt.subplot(2, 1, 1)
-    # plt.plot(kb0)
-    # plt.subplot(2, 1, 2)
-    # plt.plot(kb1)
-    # plt.show()
-    #
+
     for i in range(4):
         cv2.putText(img, 'p' + str(i), tuple(np.ravel(kb_quad[i,:])), cv2.FONT_HERSHEY_PLAIN, 2, (255, 0, 0), 2, cv2.LINE_AA)
 
